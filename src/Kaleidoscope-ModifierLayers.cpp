@@ -11,7 +11,7 @@ uint8_t ModifierLayers::mod_locked_unheld_next = 0;
 uint8_t ModifierLayers::mod_is_pressed_directly = 0;
 uint8_t ModifierLayers::mod_was_pressed_directly = 0;
 
-uint8_t ModifierLayers::live_unheld_required[ROWS][COLS];
+uint8_t ModifierLayers::live_unheld_required[Kaleidoscope.device().matrix_rows][Kaleidoscope.device().matrix_columns];
 
 inline uint8_t flagsToModifierMask(uint8_t flags) {
     // TODO(nikita): it may be better to also incorporate
@@ -25,22 +25,22 @@ inline uint8_t flagsToModifierMask(uint8_t flags) {
     return result;
 }
 
-EventHandlerResult ModifierLayers::onKeyswitchEvent(Key &mapped_key, byte row, byte col, uint8_t key_state) {
+EventHandlerResult ModifierLayers::onKeyswitchEvent(Key &mapped_key, KeyAddr key_addr, uint8_t key_state) {
     // If we are idle or have an injected key, fall through
     if ((!keyWasPressed(key_state) && !keyIsPressed(key_state)) || (key_state & INJECTED)) {
         return EventHandlerResult::OK;
     }
 
     if (keyIsPressed(key_state)
-    && (!mapped_key.flags)
-    && (mapped_key.keyCode >= HID_KEYBOARD_FIRST_MODIFIER)
-    && (mapped_key.keyCode <= HID_KEYBOARD_LAST_MODIFIER)) {
+    && (!mapped_key.getFlags())
+    && (mapped_key.getKeyCode() >= HID_KEYBOARD_FIRST_MODIFIER)
+    && (mapped_key.getKeyCode() <= HID_KEYBOARD_LAST_MODIFIER)) {
         mod_is_pressed_directly |= LAYER_MODIFIER_KEY(mapped_key);
         return EventHandlerResult::OK;
     }
 
     // Don't handle synthetic keys
-    if ((mapped_key.flags & SYNTHETIC)) {
+    if ((mapped_key.getFlags() & SYNTHETIC)) {
         return EventHandlerResult::OK;
     }
 
@@ -51,28 +51,28 @@ EventHandlerResult ModifierLayers::onKeyswitchEvent(Key &mapped_key, byte row, b
     // When a key is first toggled on, the unheld requirements for that key are
     // computed and stored.
     if (keyToggledOn(key_state)) {
-        uint8_t layer = Layer.lookupActiveLayer(row, col);
+        uint8_t layer = Layer.lookupActiveLayer(key_addr);
         uint8_t modifier_mask = 0;
 
         // This can be precomputed (which may be faster but will use more memory)
         for (byte index = 0; overlays[index].modifier_mask != 0; index++) {
-            if (layer == overlays[index].overlay_layer && Layer.isOn(overlays[index].original_layer)) {
+            if (layer == overlays[index].overlay_layer && Layer.isActive(overlays[index].original_layer)) {
                 modifier_mask = overlays[index].modifier_mask;
             }
         }
-        live_unheld_required[row][col] = modifier_mask & ~flagsToModifierMask(mapped_key.flags);
+        live_unheld_required[key_addr.row()][key_addr.col()] = modifier_mask & ~flagsToModifierMask(mapped_key.getFlags());
     } else if (keyToggledOff(key_state)) {
         // In theory this should not be necessary, but do it just in case the
         // next keyToggledOn event for this key doesn't reach this handler
-        live_unheld_required[row][col] = 0;
+        live_unheld_required[key_addr.row()][key_addr.col()] = 0;
         return EventHandlerResult::OK;
     }
 
-    uint8_t unheld_required = live_unheld_required[row][col];
+    uint8_t unheld_required = live_unheld_required[key_addr.row()][key_addr.col()];
     uint8_t held_required = ~unheld_required & mod_was_pressed_directly;
 
     if ((unheld_required & mod_locked_held) || (held_required & mod_locked_unheld)) {
-        KeyboardHardware.maskKey(row, col);
+        Kaleidoscope.device().maskKey(key_addr);
         return EventHandlerResult::EVENT_CONSUMED;
     }
 
@@ -89,21 +89,21 @@ EventHandlerResult ModifierLayers::beforeReportingState() {
     for (byte index = 0; index < 8; index++) {
         if (mod_locked_unheld_next & ((uint8_t)1 << index)) {
             uint8_t key_code = index + HID_KEYBOARD_FIRST_MODIFIER;
-            kaleidoscope::hid::releaseRawKey({ key_code, KEY_FLAGS });
+            Kaleidoscope.hid().keyboard().releaseRawKey({ key_code, KEY_FLAGS });
         }
     }
 
     // Toggle any layers we need to
     uint32_t old_layer_state = Layer.getLayerState();
     for (byte index = 0; overlays[index].modifier_mask != 0; index++) {
-        if (Layer.isOn(overlays[index].original_layer)) {
+        if (Layer.isActive(overlays[index].original_layer)) {
             if (mod_is_pressed_directly & overlays[index].modifier_mask) {
-                Layer.on(overlays[index].overlay_layer);
+                Layer.activate(overlays[index].overlay_layer);
             } else {
-                Layer.off(overlays[index].overlay_layer);
+                Layer.deactivate(overlays[index].overlay_layer);
             }
         } else {
-            Layer.off(overlays[index].overlay_layer);
+            Layer.deactivate(overlays[index].overlay_layer);
         }
     }
 

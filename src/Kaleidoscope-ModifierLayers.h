@@ -12,7 +12,7 @@ public:
     } overlay_t;
     ModifierLayers(void) {}
 
-    EventHandlerResult onKeyswitchEvent(Key &mapped_key, byte row, byte col, uint8_t key_state);
+    EventHandlerResult onKeyswitchEvent(Key &mapped_key, KeyAddr key_addr, uint8_t key_state);
     EventHandlerResult beforeReportingState();
     EventHandlerResult afterEachCycle();
 
@@ -30,10 +30,10 @@ private:
     static uint8_t mod_is_pressed_directly;
     static uint8_t mod_was_pressed_directly;
 
-    static uint8_t live_unheld_required[ROWS][COLS];
+    static uint8_t live_unheld_required[Kaleidoscope.device().matrix_rows][Kaleidoscope.device().matrix_columns];
 };
 }
 
 extern kaleidoscope::ModifierLayers ModifierLayers;
 
-#define LAYER_MODIFIER_KEY(key) ((uint8_t)1 << ((key).keyCode - HID_KEYBOARD_FIRST_MODIFIER))
+#define LAYER_MODIFIER_KEY(key) ((uint8_t)1 << (key.getKeyCode() - HID_KEYBOARD_FIRST_MODIFIER))
